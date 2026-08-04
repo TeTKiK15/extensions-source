@@ -5,14 +5,15 @@ plugins {
 }
 
 keiyoushi {
-    name = "Manhuarm"
+    name = "짭툰 (Jjaptoon)"
     versionCode = 1
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
     source {
-        name = "Manhuarm"
-        lang = "all"
-        baseUrl = "https://manhuarmtl.com"
+        lang = "ko"
+        baseUrl {
+            custom("https://www.jjaptoon004.com")
+        }
     }
 }

@@ -5,14 +5,14 @@ plugins {
 }
 
 keiyoushi {
-    name = "Manhuarm"
+    name = "Comick"
     versionCode = 1
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
     source {
-        name = "Manhuarm"
-        lang = "all"
-        baseUrl = "https://manhuarmtl.com"
+        name = "Comick"
+        lang = "en"
+        baseUrl = "https://api.comick.dev"
     }
 }

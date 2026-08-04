@@ -38,8 +38,4 @@ class CloudflareWarmupInterceptor(
 
         return response
     }
-
-    fun reset() {
-        isWarmedUp.set(false)
-    }
 }

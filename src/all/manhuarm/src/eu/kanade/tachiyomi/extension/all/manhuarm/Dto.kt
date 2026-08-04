@@ -35,7 +35,7 @@ data class Dialog(
     val height: Float get() = scale * _height
     val width: Float get() = scale * _width
 
-    val text: String get() = textByLanguage["text"] ?: throw Exception("Dialog not found")
+    val text: String get() = textByLanguage["text"] ?: textByLanguage.values.firstOrNull().orEmpty()
     fun getTextBy(language: Language) = when {
         !language.disableTranslator -> textByLanguage[language.origin]
         else -> textByLanguage[language.target]
