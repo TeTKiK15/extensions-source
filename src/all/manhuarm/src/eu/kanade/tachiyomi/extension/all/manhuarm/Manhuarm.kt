@@ -142,58 +142,68 @@ abstract class Manhuarm :
     private val dateFormat = DateTimeFormatter.ofPattern("MMMM dd, yyyy", Locale.US)
     private val dateFormatAlt = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.US)
 
-    // Cookie jar to persist Cloudflare cf_clearance cookies across requests
+    // Cookie jar to persist Cloudflare cf_clearance cookies across requests.
+    // Cookies are stored per host and keyed by (name, domain, path) so refreshed
+    // values replace stale ones without collapsing distinct scoped cookies.
     private val cookieJar =
         object : CookieJar {
-            private val cookieStore = ConcurrentHashMap<String, MutableList<Cookie>>()
+            private val cookieStore = ConcurrentHashMap<String, MutableMap<String, Cookie>>()
+
+            private val baseHost by lazy { baseUrl.toHttpUrl().host }
 
             override fun saveFromResponse(
                 url: HttpUrl,
                 cookies: List<Cookie>,
             ) {
                 synchronized(cookieStore) {
+                    if (cookies.isEmpty()) return
                     val host = url.host
-                    cookieStore.getOrPut(host) { mutableListOf() }.addAll(cookies)
-                    // Also keep cookies for the base URL host
-                    val baseHost = baseUrl.toHttpUrl().host
-                    if (host != baseHost) {
-                        cookieStore.getOrPut(baseHost) { mutableListOf() }.addAll(cookies)
+                    val now = System.currentTimeMillis()
+                    // Keep cookies for the response host and mirror them onto the base
+                    // host bucket so redirected responses (CDN/mirror) still reach
+                    // requests against the base URL.
+                    val targets = if (host != baseHost) listOf(host, baseHost) else listOf(host)
+                    targets.forEach { target ->
+                        val bucket = cookieStore.getOrPut(target) { mutableMapOf() }
+                        cookies.forEach { cookie ->
+                            if (cookie.expiresAt > now) {
+                                bucket[cookie.key()] = cookie
+                            } else {
+                                bucket.remove(cookie.key())
+                            }
+                        }
                     }
+                    dropExpired(now)
                 }
             }
 
-            override fun loadForRequest(url: HttpUrl): List<Cookie> {
-                synchronized(cookieStore) {
-                    val host = url.host
-                    val baseHost = baseUrl.toHttpUrl().host
-                    val cookies = mutableListOf<Cookie>()
+            override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(cookieStore) {
+                dropExpired(System.currentTimeMillis())
+                val host = url.host
+                val cookies = mutableListOf<Cookie>()
 
-                    // Load cookies for the request host and the base host, but only those
-                    // whose domain and path actually match the request URL.
-                    cookieStore[host]?.let { candidates ->
+                // Load cookies for the request host and the base host, but only those
+                // whose domain and path actually match the request URL.
+                cookieStore[host]?.values?.let { candidates ->
+                    cookies.addAll(candidates.filter { it.matches(url) })
+                }
+                if (host != baseHost) {
+                    cookieStore[baseHost]?.values?.let { candidates ->
                         cookies.addAll(candidates.filter { it.matches(url) })
                     }
-                    if (host != baseHost) {
-                        cookieStore[baseHost]?.let { candidates ->
-                            cookies.addAll(candidates.filter { it.matches(url) })
-                        }
-                    }
+                }
 
-                    // Filter out expired cookies
-                    val now = System.currentTimeMillis()
-                    cookies.removeAll { cookie ->
-                        if (cookie.expiresAt < now) {
-                            cookieStore[host]?.remove(cookie)
-                            cookieStore[baseHost]?.remove(cookie)
-                            true
-                        } else {
-                            false
-                        }
-                    }
+                cookies
+            }
 
-                    cookies
+            private fun dropExpired(now: Long) {
+                cookieStore.entries.removeAll { (_, bucket) ->
+                    bucket.entries.removeAll { (_, cookie) -> cookie.expiresAt <= now }
+                    bucket.isEmpty()
                 }
             }
+
+            private fun Cookie.key(): String = "$name|$domain|$path"
         }
 
     private val warmupInterceptor by lazy { CloudflareWarmupInterceptor(baseUrl, headers) }
