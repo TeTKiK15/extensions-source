@@ -54,7 +54,6 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
@@ -143,13 +142,12 @@ abstract class Manhuarm :
     private val dateFormatAlt = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.US)
 
     // Cookie jar to persist Cloudflare cf_clearance cookies across requests.
-    // Cookies are stored per host and keyed by (name, domain, path) so refreshed
-    // values replace stale ones without collapsing distinct scoped cookies.
+    // Cookies are keyed by (name, domain, path) so refreshed values replace stale
+    // ones without collapsing distinct scoped cookies. A single flat store is used
+    // because matches(url) already scopes cookies by domain/path/secure.
     private val cookieJar =
         object : CookieJar {
-            private val cookieStore = ConcurrentHashMap<String, MutableMap<String, Cookie>>()
-
-            private val baseHost by lazy { baseUrl.toHttpUrl().host }
+            private val cookieStore = HashMap<String, Cookie>()
 
             override fun saveFromResponse(
                 url: HttpUrl,
@@ -157,20 +155,12 @@ abstract class Manhuarm :
             ) {
                 synchronized(cookieStore) {
                     if (cookies.isEmpty()) return
-                    val host = url.host
                     val now = System.currentTimeMillis()
-                    // Keep cookies for the response host and mirror them onto the base
-                    // host bucket so redirected responses (CDN/mirror) still reach
-                    // requests against the base URL.
-                    val targets = if (host != baseHost) listOf(host, baseHost) else listOf(host)
-                    targets.forEach { target ->
-                        val bucket = cookieStore.getOrPut(target) { mutableMapOf() }
-                        cookies.forEach { cookie ->
-                            if (cookie.expiresAt > now) {
-                                bucket[cookie.key()] = cookie
-                            } else {
-                                bucket.remove(cookie.key())
-                            }
+                    cookies.forEach { cookie ->
+                        if (cookie.expiresAt > now) {
+                            cookieStore[cookie.key()] = cookie
+                        } else {
+                            cookieStore.remove(cookie.key())
                         }
                     }
                     dropExpired(now)
@@ -179,28 +169,11 @@ abstract class Manhuarm :
 
             override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(cookieStore) {
                 dropExpired(System.currentTimeMillis())
-                val host = url.host
-                val cookies = mutableListOf<Cookie>()
-
-                // Load cookies for the request host and the base host, but only those
-                // whose domain and path actually match the request URL.
-                cookieStore[host]?.values?.let { candidates ->
-                    cookies.addAll(candidates.filter { it.matches(url) })
-                }
-                if (host != baseHost) {
-                    cookieStore[baseHost]?.values?.let { candidates ->
-                        cookies.addAll(candidates.filter { it.matches(url) })
-                    }
-                }
-
-                cookies
+                cookieStore.values.filter { it.matches(url) }
             }
 
             private fun dropExpired(now: Long) {
-                cookieStore.entries.removeAll { (_, bucket) ->
-                    bucket.entries.removeAll { (_, cookie) -> cookie.expiresAt <= now }
-                    bucket.isEmpty()
-                }
+                cookieStore.entries.removeAll { (_, cookie) -> cookie.expiresAt <= now }
             }
 
             private fun Cookie.key(): String = "$name|$domain|$path"
@@ -626,11 +599,12 @@ abstract class Manhuarm :
         val fonts =
             arrayOf(
                 "Device font" to DEVICE_FONT,
-                "Bangers" to "Bangers-Regular",
-                "Luckiest Guy" to "LuckiestGuy-Regular",
-                "Rock Salt" to "RockSalt-Regular",
+                "Comic Neue" to "ComicNeue-Bold",
+                "Bubblegum Sans" to "BubblegumSans-Regular",
+                "Gloria Hallelujah" to "GloriaHallelujah",
+                "Boogaloo" to "Boogaloo-Regular",
+                "Creepster" to "Creepster-Regular",
                 "Fredoka One" to "FredokaOne-Regular",
-                "Lobster" to "Lobster-Regular",
             )
 
         ListPreference(screen.context).apply {

@@ -11,5 +11,5 @@ data class Language(
     val disableTranslator: Boolean = false,
     val translateSynopsis: Boolean = false,
     val supportNativeTranslation: Boolean = false,
-    val fontName: String = "Bangers-Regular",
+    val fontName: String = "FredokaOne-Regular",
 )
